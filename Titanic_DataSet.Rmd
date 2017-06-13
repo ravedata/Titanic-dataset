@@ -1,0 +1,298 @@
+---
+title: "Titanic_DataSet"
+author: "Vedant"
+date: "June 4, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Titanic : Data Science from a disaster
+
+1. Set the working directory
+
+```{r}
+setwd("C:/vedant/StatisticalLearning/Titanic_DataSet")
+
+```
+
+2. Load the training data set. In the read function itself we can make all the empty cells as NA while loading.
+
+```{r}
+Titanic.given = read.csv("train.csv",na.strings = c("","NA"))
+Titanic.test = read.csv("test.csv",na.strings = c("","NA"))
+# Make a combined dataset and call it Titanic.whole
+
+## Titanic.test does not have a Survived column
+Titanic.test$Survived = rep("NA",nrow(Titanic.test))
+## Make Survived column as 2nd column
+
+Titanic.test = Titanic.test[c(1,12,2:11)]
+
+Titanic.Whole = as.data.frame(rbind(Titanic.given,Titanic.test))
+
+```
+
+3. see the top 6 rows of data. For this lets include dplyr package
+
+```{r}
+# library(dplyr)
+# 
+# ## seeing the short summary of data
+# 
+# glimpse(Titanic.given)
+# 
+# ## seeing the structure of data
+# 
+# str(Titanic.given)
+# 
+# head(Titanic.given)
+
+```
+4. How many observation has missing values ? How to determine that ?
+
+```{r}
+sapply(Titanic.Whole, function(x) sum(is.na(x)))
+
+```
+
+We see that the following columns contain "NA" values :-
+* Age(263 values are missing)
+* Cabin(1014 values are missing)
+* Embarked(only 2 values are missing)
+      
+        
+        
+```{r}
+# library(GGally)
+# ##ggpairs(Titanic.given[,-c(4,9,11)])
+ ```
+
+Inference from the matrix plot is as below :-
+
+* those who boarded at "Cherbourg" were less likely to survive
+* The survival rate of females was higher than that of a male
+
+I dont find it useful.
+
+
+```{r}
+
+##pairs(Titanic.given[,-c(4,9,11)])
+```
+ 
+pairs function also does not seems to be useful.
+ 
+ 
+### Applying logistic regression
+ 
+```{r}
+# library(glmnet)
+# attach(Titanic.given)
+# ## fill the value of embarked with the majority occuring class
+# table(Titanic.given$Embarked)
+# Titanic.given[is.na(Titanic.given[,"Embarked"]),"Embarked"] = "S"
+# 
+# fit.logistic = glm(Survived~ Pclass+Sex+SibSp+Parch+Embarked,data = Titanic.given,family = "binomial")
+# summary(fit.logistic)
+# fit.logistic1 = glm(Survived~ Pclass+Sex+SibSp+Embarked,data = Titanic.given,family = "binomial")
+# summary(fit.logistic1)
+# ## Is the higher power of variables affecting the output
+# ## Higher power of Pclass is insignificant
+# fit.logistic2 = glm(Survived~ Pclass+Sex,data = Titanic.given,family = "binomial")
+# summary(fit.logistic2)
+
+```
+
+Initially I have applied only 2 variables Pclass and Sex as the factors that is affecting "Survived" output.
+Note:- we have excluded Name,Ticket and Cabin from our prediction
+
+Lets do the prediction on whole dataset and match with actual result.
+
+```{r}
+# fit.logistic2.probs = predict(fit.logistic2,type="response")
+# fit.logistic2.probs[1:10]
+# fit.logistic2.pred = ifelse(fit.logistic2.probs>0.5,1,0)
+# table(fit.logistic2.pred,Titanic.given$Survived)
+# errorglm= (81+109)/889
+# errorglm
+# 
+# 
+# filter(Titanic.given,Fare> 200)%>% select(Survived,Sex,Cabin,Ticket,Fare)
+# library(sqldf)
+# tblTitan = tbl_df(Titanic.given)
+# df_Cabin = sqldf("select Ticket,Cabin from tblTitan")
+# df_Cabin
+# 
+# sqldf("select PassengerId,sex,age,survived,Cabin from tblTitan where Ticket=113760")
+
+
+```
+
+We can categorize many families with grouping by ticket as mostly same family people must be traveling on same tikcet and also they must have same Cabin.
+
+Ticket is the vital information.
+
+special character in Tickets : ".","/"
+```{r}
+Titanic.Whole$Ticket = gsub('/O 2','O2',Titanic.Whole$Ticket)
+Titanic.given$Ticket
+## Replace "." and "/" with ""
+Titanic.Whole$Ticket = gsub("[[:punct:]]", "", Titanic.Whole$Ticket)
+
+## Break the ticket into two columns
+
+library(tidyr)
+Titanic.Whole = separate(Titanic.Whole,Ticket,c("tempCabin","Ticket"),sep =" " ,fill = "left")
+
+
+```
+
+Fill the missing age with mean age
+
+```{r}
+
+Titanic.Whole[is.na(Titanic.Whole[,"Age"]),"Age"] <- median(Titanic.Whole[,"Age"], na.rm = TRUE)
+ Titanic.Whole[is.na(Titanic.Whole[,"Embarked"]),"Embarked"] = "S"
+
+```
+
+Here is one important feature : Ticket. Multiple 
+
+
+```{r}
+Titanic.Whole$Ticket= as.character(Titanic.Whole$Ticket)
+## Applying logistic regression with Ticket variable
+
+Titanic.Whole$NumFamMem = Titanic.Whole$SibSp+Titanic.Whole$Parch+1
+##Creating a child variable. 
+Titanic.Whole$Child =ifelse(Titanic.Whole$Age<14,1,0)
+
+# fit.logistic3 = glm(Survived~ Pclass+Sex+NumFamMem+Age+Child,data = Titanic.given,family = "binomial")
+# summary(fit.logistic3)
+# fit.logistic3.probs = predict(fit.logistic3,type="response")
+# 
+# fit.logistic3.pred = ifelse(fit.logistic3.probs>0.5,1,0)
+# table(fit.logistic3.pred,Titanic.given$Survived)
+# errorglm3= (175)/891
+# errorglm3
+```
+
+Now using cross validation determining the test error rate.LooCV tells that the test error will be around 14% which is good.
+
+
+```{r}
+library(boot)
+cv.err =cv.glm(Titanic.given ,fit.logistic3,K = 10)
+cv.err
+```
+Vedant, go ahead and submit your first prediction
+
+```{r}
+### 5 Tickets are non numeric
+Titanic.Whole$Ticket = as.numeric(Titanic.Whole$Ticket)
+
+
+```
+
+use tree tomorow
+## Titanic Using a tree method
+
+
+```{r}
+## Reassign test and train datasets
+
+Titanic.given = Titanic.Whole[Titanic.Whole$Survived!="NA",]
+Titanic.test = Titanic.Whole[Titanic.Whole$Survived=="NA",]
+
+library(tree)
+attach(Titanic.given)
+Titanic.given$Survived = as.factor(Titanic.given$Survived)
+
+tree.Titanic.given = tree(Survived~ Sex+NumFamMem+Age+Pclass,data =Titanic.given)
+plot(tree.Titanic.given)
+text(tree.Titanic.given ,pretty =0,cex=0.7)
+summary(tree.Titanic.given)
+
+tree.Titanic.given
+## Divide the given data into test and train
+
+set.seed(111)
+
+given.train = sample(1:nrow(Titanic.given),(2*nrow(Titanic.given))/3)
+given.test = Titanic.given[-given.train,]
+
+Survived.test = given.test$Survived
+
+tree.Titanic.given.train = tree(Survived~ Sex+NumFamMem+Age+Pclass,data =Titanic.given, subset =given.train )
+
+tree.Titanic.given.train.pred = predict(tree.Titanic.given.train,given.test,type="class")
+
+table(tree.Titanic.given.train.pred,Survived.test)
+## 18 % Misclassification
+
+```
+
+predicting on actual test data
+
+```{r}
+tree.Titanic.Test.Pred = predict(tree.Titanic.given,Titanic.test,type="class")
+
+tree.Titanic.Test.Pred
+
+length(tree.Titanic.Test.Pred)
+
+submit_df =as.data.frame( cbind(PassengerId = Titanic.test$PassengerId,Survived=0))
+
+submit_df$Survived = tree.Titanic.Test.Pred
+
+submit_df
+
+##write.csv(submit_df,"submitdf.csv",row.names = FALSE)
+
+### Checking if pruning a tree can be beneficial or not
+
+set.seed(23)
+
+cv.tree.Titanic.given = cv.tree(tree.Titanic.given)
+names(cv.tree.Titanic.given)
+cv.tree.Titanic.given
+## Pruning does not affect the tree
+
+```
+
+
+
+applying bagging and random forest to the data
+
+
+```{r}
+library(randomForest)
+
+set.seed(222)
+
+bag.Titanic.givenTrain = randomForest(Survived~ Sex+NumFamMem+Age+Pclass,data = Titanic.given,mtry=4,importance=TRUE,subset = given.train )
+bag.Titanic.givenTrain
+## Predict on test
+pred.bag.Titanic.givenTest = predict(bag.Titanic.givenTrain ,newdata = given.test)
+table(pred.bag.Titanic.givenTest,Survived.test)
+
+## Apply the prediction to the actual test data
+
+pred.bag.Titatnic.test = predict(bag.Titanic.givenTrain ,newdata = Titanic.test)
+##table(pred.bag.Titanic.givenTest,Survived.test)
+
+submit_df =as.data.frame( cbind(PassengerId = Titanic.test$PassengerId,Survived=0))
+
+submit_df$Survived = pred.bag.Titatnic.test
+
+submit_df
+
+write.csv(submit_df,"submitdf.csv",row.names = FALSE)
+
+
+```
+
+

@@ -1,0 +1,288 @@
+---
+title: "Titanic_Vedant_Feat"
+author: "Vedant"
+date: "June 7, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+setwd('C:/vedant/StatisticalLearning/Titanic_DataSet')
+train <- read.csv("train.csv")
+test <- read.csv("test.csv")
+
+# Examine structure of dataframe
+str(train)
+
+# Look at number of people who survived
+table(train$Survived)
+prop.table(table(train$Survived))
+# Create new column in test set with our prediction that everyone dies
+test$Survived <- rep(0, 418)
+# Create submission dataframe and output to file
+submit <- data.frame(PassengerId = test$PassengerId, Survived = test$Survived)
+write.csv(submit, file = "theyallperish.csv", row.names = FALSE)
+
+```
+First prediction is that most people died
+
+```{r}
+# Look at gender patterns
+summary(train$Sex)
+prop.table(table(train$Sex, train$Survived))
+## rowise proprtion can be determined as below
+
+prop.table(table(train$Sex, train$Survived),1)
+
+
+# Create new column in test set with our prediction that everyone dies
+test$Survived <- 0
+# Update the prediction to say that all females will survive
+test$Survived[test$Sex == 'female'] <- 1
+# Create submission dataframe and output to file
+submit <- data.frame(PassengerId = test$PassengerId, Survived = test$Survived)
+write.csv(submit, file = "gendermodel.csv", row.names = FALSE)
+
+# Look at age patterns
+summary(train$Age)
+
+train$Child[train$Age < 18] <- 1
+
+aggregate(Survived ~ Child + Sex, data=train, FUN=sum)
+aggregate(Survived ~ Child + Sex, data=train, FUN=length)
+aggregate(Survived ~ Child + Sex, data=train, FUN=function(x) {sum(x)/length(x)})
+
+```
+
+
+```{r}
+
+# Look at class and fare patterns
+train$Fare2 <- '30+'
+train$Fare2[train$Fare < 30 & train$Fare >= 20] <- '20-30'
+train$Fare2[train$Fare < 20 & train$Fare >= 10] <- '10-20'
+train$Fare2[train$Fare < 10] <- '<10'
+
+aggregate(Survived ~ Fare2 + Pclass + Sex, data=train, FUN=function(x) {sum(x)/length(x)})
+
+
+# Create new column in test set with our prediction that everyone dies
+test$Survived <- 0
+
+# Update the prediction to say that all females will survive
+test$Survived[test$Sex == 'female'] <- 1
+# Update once more to say that females who pay more for a third class fare also perish
+test$Survived[test$Sex == 'female' & test$Pclass == 3 & test$Fare >= 20] <- 0
+
+# Create submission dataframe and output to file
+submit <- data.frame(PassengerId = test$PassengerId, Survived = test$Survived)
+write.csv(submit, file = "genderclassmodel.csv", row.names = FALSE)
+
+
+```
+
+
+
+```{r}
+# Install and load required packages for fancy decision tree plotting
+library(rpart)
+library(rattle)
+library(rpart.plot)
+library(RColorBrewer)
+
+# Recreate the gender model
+
+fit <- rpart(Survived ~ Sex, data=train, method="class")
+
+fancyRpartPlot(fit)
+# Build a deeper tree
+fit <- rpart(Survived ~ Pclass + Sex + Age + SibSp + Parch + Fare + Embarked, data=train, method="class")
+# Plot it with base-R
+plot(fit)
+text(fit,cex=0.9)
+# And then make it look better with fancyRpartPlot!
+fancyRpartPlot(fit)
+# Now let's make a prediction and write a submission file
+Prediction <- predict(fit, test, type = "class")
+submit <- data.frame(PassengerId = test$PassengerId, Survived = Prediction)
+write.csv(submit, file = "myfirstdtree.csv", row.names = FALSE)
+
+# Let's unleash the decision tree and let it grow to the max
+fit <- rpart(Survived ~ Pclass + Sex + Age + SibSp + Parch + Fare + Embarked, data=train,
+             method="class", control=rpart.control(minsplit=2, cp=0))
+fancyRpartPlot(fit)
+
+# Now let's make a prediction and write a submission file
+Prediction <- predict(fit, test, type = "class")
+submit <- data.frame(PassengerId = test$PassengerId, Survived = Prediction)
+write.csv(submit, file = "myfullgrowntree.csv", row.names = FALSE)
+
+# Manually trim a decision tree
+fit <- rpart(Survived ~ Pclass + Sex + Age + SibSp + Parch + Fare + Embarked, data=train,
+             method="class", control=rpart.control(minsplit=2, cp=0.005))
+# new.fit <- prp(fit,snip=TRUE)$obj
+# fancyRpartPlot(new.fit)
+
+```
+
+
+## Feature Engineering
+
+
+```{r}
+test$Survived = NA
+head(test)
+test = test[,c(1,12,2:11)]
+train = train[,-c(13,14)]
+head(test)
+head(train)
+whole = rbind(train,test)
+
+
+```
+ What is in the name
+ 
+ 
+```{r}
+
+
+##How can a person's title can give more insight ?
+##There seems to be a fair few possibilities of patterns in this that may dig deeper than the combinations of age, gender, etc that we looked at before
+
+whole$Name[1:2]
+
+## Title starts with comma and ends with a fullstop
+whole$Name = as.character(whole$Name)
+whole$Title <- sapply(whole$Name, FUN=function(x) {strsplit(x, split='[,.]')[[1]][2]})
+
+whole$Title <- sub(' ', '', whole$Title)
+table(whole$Title)
+```
+ Similar titles :
+ 
+ Mme,Mrs --197+ 1
+ 
+ mlle + miss +MS -- 2+262 +2
+ 
+ Lady+ Dona + the countess +johnkeer = 1+1+1+1
+ 
+ Capt + Col +Don+ Dr + Major + Rev+ Sir = 1+4+1+8+2+8+1
+ 
+ 
+ 
+ 
+```{r}
+whole$Title[whole$Title %in% c("Mme","Mrs")]='Mrs'
+whole$Title[whole$Title %in% c("Mlle","Miss","Ms")]='Miss'
+whole$Title[whole$Title %in% c("Lady","Dona","the Countess","Jonkheer")]='Lady'
+whole$Title[whole$Title %in% c("Capt","Col","Don","Dr","Major","Rev","Sir")]='Sir'
+
+table(whole$Title)
+```
+
+Create a new variable called family size
+
+```{r}
+whole$FamSize = whole$SibSp+whole$Parch+1
+
+```
+
+Create a new variable FamilyId
+
+
+
+```{r}
+whole$Surname = sapply(whole$Name, FUN=function(x) {strsplit(x, split='[,.]')[[1]][1]})
+
+## Same family memebers same title+ same famsize + same embark station
+
+whole$FamilyId = paste(as.character(whole$FamSize), whole$Surname,as.character(whole$Embarked), sep="")
+
+whole$FamilyId[whole$FamSize <= 2] <- 'Small'
+table(whole$FamilyId)
+famIds=(table(whole$FamilyId))
+famIds=as.data.frame(famIds)
+
+```
+further filter out any small families
+```{r}
+## Replace fsmIds with only small families
+
+famIds= famIds[famIds$Freq<=2,]
+
+## Now replace all the family sizes 
+
+whole$FamilyId[whole$FamilyId %in% famIds$Var1]='Small'
+whole$FamilyId = as.factor(whole$FamilyId)
+```
+
+divide the trainig and test set once again
+
+```{r}
+train = whole[1:891,]
+test = whole[892:1309,]
+```
+
+fitting using trees
+
+```{r}
+fit <- rpart(Survived ~ Pclass + Sex + Age + SibSp + Parch + Fare + Embarked + Title + FamSize + FamilyId,
+               data=train, 
+               method="class")
+fancyRpartPlot(fit)
+tree.pred = predict(fit, test, type = "class")
+submit <- data.frame(PassengerId = test$PassengerId, Survived = tree.pred)
+write.csv(submit, file = "engineeredfeaturestree.csv", row.names = FALSE)
+```
+
+## use random forest
+
+
+```{r}
+sapply(whole, function(x) sum(is.na(x)))
+## fill the age using Anova function
+
+Agefit <- rpart(Age ~ Pclass + Sex + SibSp + Parch + Fare + Embarked + Title + FamSize, data=whole[!is.na(whole$Age),], method="anova")
+whole$Age[is.na(whole$Age)] <- predict(Agefit, whole[is.na(whole$Age),])
+
+## fill the missing fare value
+
+whole$Fare[is.na(whole$Fare)] = median(whole$Fare,na.rm = TRUE)
+
+```
+
+
+```{r}
+# New factor for Random Forests, only allowed <32 levels, so reduce number
+whole$FamilyID2 <- whole$FamilyId
+# Convert back to string
+whole$FamilyID2 <- as.character(whole$FamilyID2)
+whole$FamilyID2[whole$FamSize <= 3] <- 'Small'
+table(whole$FamilyID2)
+# And convert back to factor
+whole$FamilyID2 <- factor(whole$FamilyID2)
+whole$Title = as.factor(whole$Title)
+# Split back into test and train sets
+train <- whole[1:891,]
+test <- whole[892:1309,]
+library(randomForest)
+set.seed(415)
+fit <- randomForest(as.factor(Survived) ~ Pclass + Sex + Age + SibSp + Parch + Fare + Embarked + Title + FamSize + FamilyID2,
+                    data=train, importance=TRUE, ntree=2000)
+# Look at variable importance
+varImpPlot(fit)
+
+pred.randomforest = predict(fit,test)
+pred.randomforest[1:10]
+
+rf_df = data.frame(PassengerId=test$PassengerId,Survived=  pred.randomforest)
+
+write.csv(rf_df,file = "randomforestpred.csv",row.names = FALSE)
+
+```
+
+
+
